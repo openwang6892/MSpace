@@ -1,0 +1,444 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+. ~/.bashrc
+
+# 加载变量
+COLOR='\033[38;5;226m'
+filename=$(basename "$0")
+
+if command -v toilet >/dev/null 2>&1; then
+    GC='text="${NAME:-}"; raw=$(toilet -f term "$text"); \
+        awk -v str="$raw" -v RS="" -v ORS="" \
+        "BEGIN{ \
+            split(\"\033[31m \033[91m \033[33m \033[92m \033[36m \033[94m \033[35m\", c, \" \"); \
+            for(i=1;i<=length(str);i++) \
+                printf \"%s%s\033[0m\", c[((i-1)%7)+1], substr(str,i,1); \
+            printf \"\n\" \
+        }"'
+else
+    GC='printf "%s\n" "${NAME:-}"'
+fi
+
+if [ "$NAME" = "" ]; then
+  NAME=""
+fi
+
+# === 颜色 ===
+BLACK='\033[38;5;0m'   RED='\033[38;5;1m'   # 黑  红
+GREEN='\033[38;5;2m'   YELLOW='\033[38;5;3m' # 绿  黄
+BLUE='\033[38;5;4m'    PURPLE='\033[38;5;5m' # 蓝  紫
+CYAN='\033[38;5;6m'    WHITE='\033[38;5;7m'  # 青  白
+
+BR_BLACK='\033[38;5;8m'    BR_RED='\033[38;5;9m'    # 亮黑 亮红
+BR_GREEN='\033[38;5;10m'   BR_YELLOW='\033[38;5;11m' # 亮绿 亮黄
+BR_BLUE='\033[38;5;12m'    BR_PURPLE='\033[38;5;13m' # 亮蓝 亮紫
+BR_CYAN='\033[38;5;14m'    BR_WHITE='\033[38;5;15m'  # 亮青 亮白
+
+ORANGE='\033[38;5;208m'   PINK='\033[38;5;206m'          # 橘 粉
+DARK_GREEN='\033[38;5;22m'    LIGHT_BLUE='\033[38;5;123m'  # 深绿 浅蓝
+BROWN='\033[38;5;94m'    LIME='\033[38;5;118m'            # 棕 酸橙
+TEAL='\033[38;5;34m'    GOLD='\033[38;5;226m'             # 青绿 金
+
+VIOLET='\033[38;5;177m'   CORAL='\033[38;5;213m'         # 紫罗兰 珊瑚
+OLIVE='\033[38;5;83m'   SKY_BLUE='\033[38;5;119m'        # 橄榄 天蓝
+PLUM='\033[38;5;175m'   TURQUOISE='\033[38;5;75m'        # 梅子 绿松石
+BEIGE='\033[38;5;231m'   RUST='\033[38;5;137m'           # 米色 铁锈
+
+DARK_BLUE='\033[38;5;18m'   MAGENTA='\033[38;5;200m'      # 深蓝 洋红
+LIGHT_GRAY='\033[38;5;245m'   DARK_GRAY='\033[38;5;238m'  # 浅灰 深灰
+TAN='\033[38;5;222m'   PEACH='\033[38;5;217m'            # 浅棕 桃色
+SLATE_BLUE='\033[38;5;108m'   KHAKI='\033[38;5;193m'      # 灰蓝 卡其
+
+N='\033[0m'
+
+[ -z "$TERMUX_VERSION" ] && {
+    printf "${BR_RED}警告：非 Termux 环境，部分选项可能无法使用！按 Enter 继续…${N}\n" >&2
+    read -r input
+}
+
+# 命令检查
+pkg_list="curl wget toilet clang git nano busybox"
+ALL_INSTALLED=true
+for p in $pkg_list; do
+    if ! command -v "$p" >/dev/null 2>&1; then
+        ALL_INSTALLED=false
+        printf "${BR_RED}$p未安装，是否现在安装？[y/N]\n"
+        read input
+        if [ "$input" = "y" ]; then
+            pkg install "$p" -y
+        fi
+    fi
+done
+
+# 补丁：出错立即终止，防止漏变量/管道错误
+set -euo pipefail
+# 补丁：检测命令是否存在的小工具
+checker() { command -v "$1" >/dev/null || { printf "${RED}未安装 %s${N}\n" "$1"; exit 1; } ; }
+log() { echo "$@"; }
+
+clear
+
+# 脚本开头结束
+# ###################---分---#####################
+# ###################---界---#####################
+# ###################---线---#####################
+
+printf "${LIME}"
+cat <<\EOF
+ _____
+|_   _|__ _ __ _ __ ___  _   ___  __
+  | |/ _ \ '__| '_ ` _ \| | | \ \/ /
+  | |  __/ |  | | | | | | |_| |>  <
+  |_|\___|_|  |_| |_| |_|\__,_/_/\_\
+EOF
+
+printf "${CYAN}$0\n"
+printf "\t${MAGENTA}你好！"
+eval "$GC"
+printf "${LIME}===============================\n"
+printf "${COLOR}"
+echo "0.更新PKG索引"
+echo "0.1 给当前会话添加唤醒锁"
+echo "0.2 恢复termux字体为原本字体"
+echo "0.3 提取顶部的ASCII字termux"
+echo "1.更换镜像源(建议先回车再选第三个清华源)"
+echo "2.启动 VNC 服务器"
+echo "3.ADB 菜单"
+echo "4.一键打包GKD订阅"
+echo "5.编辑.bashrc"
+printf "${BR_RED}6.已停用\n"
+printf "7.已停用${COLOR}\n"
+echo "8.提醒管理"
+echo "9.提取/编辑termux欢迎语"
+echo "10.添加命令"
+echo "11.尝试调用 Tmoe 工具"
+echo "12.启动 Python 静态文件服务器"
+echo "13.加解密文件/脚本"
+echo "14.检查脚本是否有错"
+echo "15.使用base64编解码文本"
+echo "16.输入名称"
+echo "17.安装所有可用的 Shell 解释器"
+echo "18.IP地址信息查询"
+echo "19.Hitokoto 一言句子获取"
+echo "20.获取当前精确到毫秒的时间"
+echo "21.备份 Termux 数据"
+echo "22.部署 Shizuku 的 Rish"
+echo "23.手机 TTS 说话"
+echo "24.PRoot-Distro 管理菜单"
+echo "25.ASCII艺术字生成"
+printf "${ORANGE}"
+echo "a.公告"
+echo "b.备份此脚本及.bashrc"
+echo "c.复制此脚本内容到剪贴板"
+echo "e.编辑此脚本"
+echo "f.有趣的包"
+echo "g.小游戏"
+echo "u.更新此脚本"
+echo "p.前往发布页"
+echo "h.获取帮助"
+echo "m.添加此脚本文件名为命令"
+echo "r.更多资源"
+echo "*.退出"
+printf "${N}"
+printf "${LIME}===============================${N}\n"
+printf "${CYAN}请输入选项："
+read choice
+printf "${N}"
+
+case $choice in
+    0) pkg update ;;
+
+    0.1) termux-wake-lock && echo "唤醒锁已添加" ;;
+
+    0.2) rm -f ~/.termux/font.ttf && termux-reload-settings
+	 rm -f ~/.termux/colors.properties && termux-reload-settings ;;
+    0.3) printf "${LIME}"
+	cat <<\EOF
+ _____
+|_   _|__ _ __ _ __ ___  _   ___  __
+  | |/ _ \ '__| '_ ` _ \| | | \ \/ /
+  | |  __/ |  | | | | | | |_| |>  <
+  |_|\___|_|  |_| |_| |_|\__,_/_/\_\
+EOF
+	;;
+
+    1) termux-change-repo &
+       checker termux-tts-speak;
+       termux-tts-speak "你现在会看到一个菜单"
+       termux-tts-speak "你可以直接回车，然后用方向键选择第三个"
+       termux-tts-speak "再按空格勾选，回车就行了" ;;
+
+    2) checker startvnc;  startvnc ;;
+
+    3) checker adb;
+       read -p "输入IP(例如192.168.0.1)" ip
+       read -p "输入端口号(例如5555)" port
+       adb connect $ip:$port
+
+       main_menu(){
+       cat <<EOF
+1.输入文字
+EOF
+       read -p "请输入选项：" input
+       case $input in
+
+	1) read -r -p "输入的文字：" text
+	   adb shell input text "$text"
+
+       esac
+}
+       main_menu ;;
+
+    4) termux-open https://wwse.lanzoub.com/iAbYD31kwlcf ;;
+
+    5) nano ~/.bashrc ;;
+
+    6) echo "停用" ;;
+
+    7) echo "停用" ;;
+
+    8) cd ~/storage
+        read -p "添加提醒[1]，查看提醒[2]，清空提醒[3]：" choose
+        case $choose in
+            1) read -p "请输入提醒：" input; printf "%s: %s\n" "$(date '+%F %T')" "$input" >> remind.txt ;;
+            2) [ -f remind.txt ] && cat remind.txt || log "暂无提醒" ;;
+            3) > remind.txt && log "提醒已清空" ;;
+        esac
+        cd - >/dev/null ;;
+
+    9) path="$PREFIX/etc/motd"
+        read -p "提取[1]还是编辑[2]欢迎语？ " sub
+        case $sub in 1) cat "$path" ;; 2) nano "$path" ;; esac ;;
+
+    10) read -p "输入命令名称：" cmd
+        read -p "输入要执行的内容：" run
+        printf 'alias %s="%s"\n' "$cmd" "$run" >> ~/.bashrc
+        . ~/.bashrc && log "已添加 alias $cmd" ;;
+
+    11) bash -c "$(curl -L https://gitee.com/mo2/linux/raw/2/2)" ;;
+
+    12) read -p "输入端口号（默认8000）：" port
+        port=${port:-8000}
+        read -p "输入服务器根路径（默认当前目录）：" path
+        path=${path:-.}
+        cd "$path" && python -m http.server "$port" ;;
+
+    13) read -p "请输入文件路径：" path
+        read -p "GPG(1) 还是 shc(2) ？" choose
+        case $choose in
+            1) checker gpg
+               read -p "加密(1) 还是解密(2) ？" sub
+               case $sub in
+                   1) gpg -c "$path" ;;
+                   2) gpg --decrypt "$path" > "${path%.gpg}" ;;
+               esac ;;
+
+            2) read -p "加密(1) 还是解密(2) ？" sub
+               case $sub in
+                   1) checker shc
+                      shc -f "$path" -o "$path.x"
+                      cp -f "$path.x" ~/storage/ && rm -f "$path.x"
+                      log "已保存至 ~/storage" ;;
+                   2) read -p "请输入要解密的文件：" file
+                      ./unshc.sh "$file" -o "$file" ;;
+               esac ;;
+        esac ;;
+
+    14) read -p "自我检查(1) 还是检查其他脚本(2) ：" choose
+        case $choose in
+            1) sh -n "$0" ;;
+            2) read -p "输入脚本路径：" p; sh -n "$p" ;;
+        esac
+        echo "无输出即正常" ;;
+
+    15) read -p "编码(1) 还是解码(2) ？" sub
+        case $sub in
+            1) read -p "请输入文本：" t; printf '%s' "$t" | base64 ;;
+            2) read -p "请输入 base64 ：" t; printf '%s' "$t" | base64 -d ;;
+        esac ;;
+
+    16) read -p "请输入一个名字：" name
+        sed -i "1iNAME=$name" ~/.bashrc
+        log "添加完成，请重启 termux" ;;
+
+    17) pkg update && pkg install -y bash dash zsh fish tcsh mksh elvish ;;
+
+    18) read -p "请输入IP地址（留空则使用本机IP）：" ip
+        ip=${ip:-$(curl -s ip.sb)}
+        curl -s "http://ip-api.com/json/$ip?fields=66842623&lang=zh-CN" | jq . ;;
+
+    19) read -p "类别字母(默认随机)： " ctype
+        read -p "要输出几句（默认1）： " cnt
+        curl -s "https://international.v1.hitokoto.cn/?c=${ctype:-}&encode=json" \
+        | jq -r '"「 $.hitokoto)」——《 $.from)》"' ;;
+
+    20) while :; do printf '\033[2J\033[H%s\n' "$(date '+%F %T:%2N')"; done ;;
+
+    21) read -p "备份(1) 还是恢复(2) 数据？ " sub
+        case $sub in
+            1) termux-backup ~/storage/shared/termux-backup.tar.gz ;;
+            2) read -p "请输入备份文件路径： " p; termux-restore "$p" ;;
+        esac ;;
+
+    22) mkdir -p ~/.shizuku
+        wget -q --show-progress -P /sdcard/Download \
+             https://link9.cc/A5I3UP
+        mv -f /sdcard/Download/rish* ~/.shizuku/
+        chmod +x ~/.shizuku/rish
+        grep -q 'alias rish=' ~/.bashrc || \
+            echo 'alias rish="sh $HOME/.shizuku/rish"' >> ~/.bashrc ;;
+
+    23) read -p "请输入要朗读的文字" input
+	termux-tts-speak "$input" ;;
+
+    24) checker proot-distro
+        cat <<'EOF'
+执行操作：
+1.安装系统
+2.登录系统
+3.获取帮助
+4.列出所有可用系统
+EOF
+	read -p "请输入选项：" choice
+	case $choice in
+	1) read -p "选择系统安装：" dis
+	   proot-distro install "$dis"
+	   echo "安装完成" ;;
+
+	2) read -p "输入已安装系统以登录：" dis
+	   proot-distro login "$dis" ;;
+
+	3) proot-distro -h ;;
+
+	4) proot-distro list ;;
+
+	esac ;;
+
+    25) checker figlet;
+	read -p "请输入文字" letter
+	printf "${VIOLET}"
+	figlet "$letter" ;;
+
+#   1)
+# 数字选项结束
+# ###################---分---#####################
+# ###################---界---#####################
+# ###################---线---#####################
+
+    a|A) printf "${BR_GREEN}"
+         cat <<'EOF'
+2025年8月16日
+目前20多个选项版本号就有3.0了，考虑回退版本号
+制作出第一个非正式版的版本
+更新日志v3.2-T：
+杂碎
+其他修改
+EOF
+         printf "${N}" ;;
+
+    b|B) read -p "备份~/.bashrc请输入1，备份此脚本请输入2，全部备份请输入3：" input
+        case $input in
+            1) cp -f ~/.bashrc "$HOME/storage/shared/" && log "已备份 ~/.bashrc 到 /sdcard/" ;;
+
+            2) cp -f "$0" "$HOME/storage/shared/" && log "已备份本脚本到 /sdcard/" ;;
+
+            3) cp -f ~/.bashrc "$HOME/storage/shared/"
+               cp -f "$0" "$HOME/storage/shared/"
+               log "已全部备份到 /sdcard" ;;
+
+        esac ;;
+
+    c|C) cat $0 | termux-clipboard-set ;;
+
+    e|E) nano $0 ;;
+
+    f|F) echo "1.fakeroot 伪装root"
+	 read -p "请输入选项" choice
+	 case $input in
+
+	 1) pkg install fakeroot -y
+	    echo "安装完成"
+	    echo "输入fakeroot进入root" ;;
+
+	 esac ;;
+
+    g|G) clear
+	 echo "1.随机数字"
+	 read -p "请输入选项：" choice
+	 case $choice in
+	  1) read -p "最小值: " min
+	     read -p "最大值: " max
+	     range=$(( max - min + 1 ))
+
+	     while :; do
+	     printf "%d\n" $(( $(od -An -N4 -tu4 < /dev/urandom | tr -d ' ') % (max - min + 1) + min ))
+	     sleep 0.5
+	     done ;;
+	 esac ;;
+
+    p|P) url="https://www.123684.com/s/zy7dvd-VsbKv?pwd=y3lH#"
+         termux-open "$url" 2>/dev/null || echo "请手动打开: $url" ;;
+
+    h|H|help) printf "${CYAN}版本：v3.2-T 过渡版${N}\n"
+cat <<EOF
+电子邮箱：wangxia9@foxmail.com，备用tong689@outlook.com，不懂问我
+可能会有某些功能需要安装特定的软件包，缺啥补啥就行
+在使用某些功能时，链接可能会失效，麻烦及时反馈给我
+作者在此感谢你的使用
+EOF
+    ;;
+
+    dt|DT) echo "1.快捷修改此脚本"
+           echo "2.查找脚本字符"
+           read -p "请输入选项" input
+           case $input in
+
+           1) cp "$0" /sdcard/ ;;
+
+           2) printf "${CYAN}请输入要查找的指令关键字：${N}"
+              read -r key
+              grep -n --color=always "$key" "$0" ;;
+
+           esac ;;
+
+    m|M) mkdir -p ~/bin
+	 path=~/bin/$filename
+         cp -f "$0" "$path" && chmod +x "$path"
+         hash -r ;;
+
+    r|R) echo "1.SCP基金会  2.多邻国破解  3.Beyond音乐"
+        read -p "请选择：" sub
+        case $sub in
+            1) termux-open https://scp-wiki-cn.wikidot.com/ ;;
+
+            2) read -p "1.蓝奏云  2.123云盘  请选择：" s
+               case $s in
+
+                   1) termux-open https://yxssp.lanzoui.com/b0q6iadi ;;
+
+                   2) termux-open https://www.123684.com/s/zy7dvd-DubKv ;;
+
+               esac ;;
+
+            3) termux-open https://www.123684.com/s/zy7dvd-rubKv ;;
+
+        esac ;;
+
+    u|U) read -p "输入菜单文件的路径：" f
+        mv "$f" "$0" && chmod +x "$0" && log "已更新" ;;
+
+    *) [ -z "$choice" ] && exit 0
+        printf "${BR_RED}ERROR: $choice: 选项未找到${N}\n"
+	exit 1 ;;
+
+esac
+
+# 重复运行脚本提示
+for i in 3 2 1; do
+    printf "\r${TURQUOISE}按R重新运行，回车退出 还有%d秒…" "$i"
+    read -t 1 -s -r -n 1 k || continue
+    printf "\r\033[K"
+    [[ $k == [rR] ]] && exec "$0"
+    exit 0
+done
+printf "\r\033[K已退出\n"
