@@ -9,8 +9,6 @@ MSp / MSpace / Menu Space / 菜单空间
 ## 截图及演示
 ![v3.6版本的主界面截图](./image/screenshot_v3.6.jpg)
 
-![演示画面](./image/demo_v3.6.gif)
-
 ## 功能
 1. 有趣的软件包
 2. 彩虹username
@@ -30,8 +28,6 @@ MSp / MSpace / Menu Space / 菜单空间
 MSpace**仅支持**bash，请勿使用其他解释器运行
 
 建议只在**Termux**运行MSp
-
-<img src="./image/loading.gif)" width="24%"/>
 
 ## 许可证
 本项目采用 [MIT 许可证](LICENSE) 开源，允许自由阅读、复制、修改和分发。
