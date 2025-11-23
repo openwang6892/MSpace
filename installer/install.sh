@@ -1,4 +1,3 @@
-#!/data/data/com.termux/files/usr/bin/bash
 set -eo pipefail
 [ -z "$TERMUX_VERSION" ]&&echo "非termux环境"&&exit 1
 _red=$(tput setaf 1) _green=$(tput setaf 2) _yellow=$(tput setaf 3) _bold=$(tput bold) _reset=$(tput sgr0)
