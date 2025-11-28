@@ -1,6 +1,6 @@
 # MSpace
 <img src="./image/Termux.png" width="24%"/>
-作者：wangxia
+作者：Wangxia
 
 MSp / MSpace / Menu Space / 菜单空间
 
@@ -18,7 +18,7 @@ curl -s https://gh-proxy.org/raw.githubusercontent.com/openwang6892/MSpace/refs/
 
 ## 功能
 1. 有趣的软件包
-2. 彩虹username
+2. 彩虹用户名
 3. ffmpeg工具箱
 4. APT管理
 5. termux功能菜单
