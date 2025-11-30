@@ -23,7 +23,10 @@ color_file="$HOME/.mspconf/color.conf"
 
 # 变量区
 filename=$(basename "$0")
-ver=3.6.1 ver_type=正式 Author=wangxia
+VERSION=3.6.1 VType=正式 Author=wangxia
+GH_PROXY="https://gh-proxy.org"
+GH_REPO="openwang6892/MSpace"
+GH_RAW="$GH_PROXY/https://raw.githubusercontent.com/${GH_REPO}/refs/heads/main"
 
 alias open="xdg-open"
 
@@ -177,9 +180,7 @@ u() {
       [ "$f" ] || return 0
    fi
    cp "$f" "$0" && chmod +x "$0" && echo "已更新"
-}
-
-update() { curl -s "$GH_RAW/install.sh" | bash; }
+} # 更新脚本
 
 enter() {
    echo
@@ -214,9 +215,10 @@ esac
 # 大函数区
 #######################################################################
 
+update() { curl -s "$GH_RAW/installer/install.sh" | bash; }
+
 msp_settings() {
-   proxy="https://gh-proxy.org" repo_url="openwang6892/MSpace"
-   printf "%s" "$GOLD"
+   printf "%b" "$GOLD"
    cat <<EOF
 1.更新脚本
 2.检查脚本是否更改过/盗版
@@ -226,21 +228,22 @@ EOF
    case $choice in
       1)
          echo "${BLUE}正在获取最新版本信息..."
-         echo "当前版本：$ver"
+         echo "当前版本：v$VERSION"
          # 通过github api获取最新版
-         LATEST=$(curl -s "${proxy}/https://api.github.com/repos/${repo_url}/releases/latest" | grep -oP '"tag_name": "\K[^"]+') || die "无法获取最新版本"
+         LATEST=$(curl -s "${GH_PROXY}/https://api.github.com/repos/${GH_REPO}/releases/latest" | grep -oP '"tag_name": "\K[^"]+') || die "无法获取最新版本"
 
-         echo "${SUC}最新版本：$LATEST"
+         echo "${GOLD}最新版本：$LATEST${N}"
          LATEST=${LATEST/#v/} # 去除字符v
          # 使用支持版本号语义的sort -V提取最大的那个版本号
-         bigger_ver=$(printf '%s\n%s\n' "$LATEST" "$ver" | sort -V | tail -n1)
+         bigger_ver=$(printf '%s\n%s\n' "$LATEST" "$VERSION" | sort -V | tail -n1)
 
-         if [[ $bigger_ver == "$LATEST" ]]; then
-            echo "${WARN}有新版本可用！"
-            choice yes 是否继续[Y/n]？
+         if [[ $bigger_ver == "$LATEST" && $bigger_ver != "$VERSION" ]]; then
+            echo "${SUC}有新版本可用！"
+            printf "%b" "$LIME"
+            read -p "是否更新[Y/n]？：" yes
             yes yes "$yes"
             update
-         elif ((LATEST == ver)); then
+         elif [[ $bigger_ver == "$VERSION" ]]; then
             echo "没有新版本可用"
          else
             echo "${WARN}！警告：非法版本号，可能经过篡改，请检查正版性！"
@@ -742,7 +745,7 @@ backup() {
 
 help() {
    clear && ascii_termux && fenge
-   echo "${CYAN}版本：$ver $ver_type版\n"
+   echo "${CYAN}版本：$VERSION $VType版\n"
    echo "作者：$Author"
    cat <<\EOF
 MSp / MSpace / Menu Space / 菜单空间
@@ -1422,7 +1425,7 @@ set nowrap              # 关闭硬换行
 EOF
                ;;
             2)
-               git clone https://gh-proxy.org/github.com/scopatz/nanorc.git ~/.nano
+               git clone https://${GH_PROXY}/github.com/scopatz/nanorc.git ~/.nano
 
                echo 'include "~/.nano/*.nanorc"' >>~/.nanorc
                ;;
@@ -1533,7 +1536,7 @@ EOF
       m) msp_conf ;;
       r) resource ;;
       u) u ;;
-      v) echo "v$ver $ver_type版" ;;
+      v) echo "v$VERSION $VType版" ;;
 
          #########################################################
       up | update) update ;;
