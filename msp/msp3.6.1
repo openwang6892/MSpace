@@ -1,0 +1,1579 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# shellcheck disable=SC2028,SC2086,SC2162,SC1091,SC2088,SC2015,SC1081,SC2164,SC2120,SC1090,SC1091,SC2154,SC2119,SC2005
+# shellcheck shell=bash
+# 缩进标准: 3空格 最佳
+# 格式化: shfmt -i 3 -ci -s -w /sdcard/msp
+
+# 安全
+#set -x
+set -o pipefail
+FI() {
+   exit_code=$?
+   echo "\n${ERR}用户触发强制中断！"
+   echo "退出码：$exit_code"
+   exit 130
+}
+trap 'FI' INT # 接到退出信号则调用强制退出函数
+
+########################################
+
+# 通过basename提取当前运行shell的文件名来获取shell名
+shellname=$(basename "$(readlink -f /proc/$$/exe)")
+color_file="$HOME/.mspconf/color.conf"
+
+# 变量区
+filename=$(basename "$0")
+ver=3.6.1 ver_type=正式 Author=wangxia
+
+alias open="xdg-open"
+
+# msp配置路径
+base_dir="$HOME/.mspconf"
+
+shellrc="$HOME/.${shellname}rc"
+str_shellrc="~/.${shellname}rc"
+
+func=${1:-} # 调用函数用
+clear
+
+[ -f "$color_file" ] && source "$color_file" || echo "${ERR}！颜色配置文件不存在，将会带来显示异常"
+
+printf "%b%s%b\n" "$CYAN" "$0" "$N" # 输出脚本路径以调试
+########################
+# 检查
+# 命令检查
+if [ "$PKG_CHECK" != "false" ]; then
+   pkg_list="curl wget git nano jq"
+   for p in $pkg_list; do
+      if ! command -v "$p" >/dev/null 2>&1; then
+         printf "%b%s未安装，是否现在安装？[y/N]：" "$WARN" "$p"
+         read input
+         input=${input,,} # 变量转换为小写
+         if [ "$input" = "y" ]; then
+            apt install "$p" -y
+         fi
+      fi
+   done
+fi
+
+[ "$shellname" != "bash" ] && {
+   printf "%b警告：当前 Shell 是%b，必须指定为bash并用bash执行！%s\n" "$WARN" "$shellname" "$N" >&2
+   enter 修改
+   read input
+   sed -i '1c#!/data/data/com.termux/files/usr/bin/bash' $0 # 写入bash的shebang到第一行
+   exit 1
+}
+
+# 如果config文件不存在则创建，否则加载配置
+[ ! -f "$base_dir/configure" ] && touch "$base_dir/configure" || source "$base_dir/configure"
+
+########################################
+
+# 食用日期
+ud_file="$base_dir/usage_date.txt"
+if [ ! -f "$ud_file" ]; then
+   touch "$ud_file"     #创建文件
+   date +%s >"$ud_file" # 记录当前时间
+fi
+
+mkdir -p "$base_dir"
+[ -f "$shellrc" ] && source "$shellrc" &>/dev/null # 加载shellrc
+[ ! -f "$shellrc" ] && touch $shellrc
+
+########################################
+
+# 功能配置
+
+# 读历史
+set -o history               # 打开历史开关
+HISTFILE=$HOME/.bash_history # 指定文件
+history -r                   # 把磁盘历史读进来
+
+first_ts=$(<"$ud_file")
+first_ts=${first_ts//[[:space:]]/} # 去空格
+now_ts=$(date +%s)
+days=$(((now_ts - first_ts) / 86400))
+
+# 基本配置
+################################################
+
+# 检查类函数
+# 命令是否存在
+chpkg() { command -v "$1" >/dev/null || {
+   printf "%b未安装 %s，是否安装？[Y/n]：%b" "$ERR" "$1" "$N"
+   read yes && nocolor
+   if [ "$yes" = "n" ]; then
+      return 0
+   else
+      if ! pkg i $1; then
+         echo "${ERR}安装失败，可能是因为包名不正确${N}"
+         choice install 正确的包名
+         pkg i $install
+      fi
+   fi
+}; }
+
+chfile() { [ -f "$1" ] || { echo "${ERR}文件 $1 不存在" && exit 1; }; }
+
+########################################################
+
+die() {
+   echo "${ERR}$1"
+   exit 1
+}
+
+yes() {
+   case $1 in
+      no) [[ $2 =~ [yY] ]] || exit 0 ;;
+      yes) [[ $2 =~ [nN] ]] || exit 0 ;;
+   esac
+}
+
+choice() {
+   [ -z "$2" ] && echo "${CYAN}请输入选项：\c" || echo "${CYAN}请输入$2：\c"
+   read "$1" && echo -n "${N}"
+}
+
+nocolor() { printf "%b" "$N"; }
+
+get_width() { stty size 2>/dev/null | awk '{print $2}' || echo 40; } # 获取屏宽
+
+fenge() { printf '%b\r%*s\n' "$LIME" "$(get_width)" '' | tr ' ' '='; }
+
+ok() { echo "${SUC}操作已完成"; }
+
+open() { echo "$1" && xdg-open "$1"; }
+
+mini_shell() {
+   clear
+   printf -v cmd "%s命令行\n此命令行中无需输入'%s'前缀" "$1" "$1"
+   echo "$cmd"
+   while true; do
+      read -p "$1> " option
+      "$1" "$option"
+      case $option in
+         exit) return 0 ;;
+         help) echo "$cmd" ;;
+      esac
+   done
+}
+
+cl() {
+   case $1 in
+      up) printf "\033[1A\033[1A\033[K" ;;
+      th | trup) printf "\033[1A\033[K" ;;
+      dn | trth) printf "\r\033[K" ;;
+      all) clear ;;
+   esac
+}
+
+blocked() { echo "${WARN}已关停 blocked" && exit 2; }
+u() {
+   local f
+   if [ "$2" = "d" ]; then
+      f=/sdcard/msp
+   else
+      read -p "输入菜单文件的路径：" f
+      [ "$f" ] || return 0
+   fi
+   cp "$f" "$0" && chmod +x "$0" && echo "已更新"
+}
+
+update() { curl -s "$GH_RAW/install.sh" | bash; }
+
+enter() {
+   echo
+   if [ -z "$1" ]; then
+      read -p "按 Enter 继续..." enter
+   else
+      read -p "按 Enter $1..." enter
+   fi
+   cl up
+}
+#######################################################################
+# 其他函数
+
+echo() { builtin echo -e "$@"; } # echo自带-e
+read() { builtin read -r "$@"; } # read自带-r
+
+#######################################################################
+# 选项1区
+case $1 in
+   bat) chpkg bat && bat $0 ;;
+   e) [ -z "$2" ] && nano $0 || nano +${2} $0 ;;
+   test) echo "Hello\nWorld" ;;
+   check) sh -c $0 ;;
+   cr) clear ;;
+   bk) cp "$0" /sdcard/ ;;
+   fmt) chpkg shfmt && shfmt -i 3 -ci -s -w "$0" ;;
+   debug) set -x && echo $0 && echo $SHELL && sleep 1 ;;
+   shellcheck) chpkg shellcheck && shellcheck $0 ;;
+   none) ;;
+esac
+
+# 大函数区
+#######################################################################
+
+msp_settings() {
+   proxy="https://gh-proxy.org" repo_url="openwang6892/MSpace"
+   printf "%s" "$GOLD"
+   cat <<EOF
+1.更新脚本
+2.检查脚本是否更改过/盗版
+3.帮助界面
+EOF
+   choice choice
+   case $choice in
+      1)
+         echo "${BLUE}正在获取最新版本信息..."
+         echo "当前版本：$ver"
+         # 通过github api获取最新版
+         LATEST=$(curl -s "${proxy}/https://api.github.com/repos/${repo_url}/releases/latest" | grep -oP '"tag_name": "\K[^"]+') || die "无法获取最新版本"
+
+         echo "${SUC}最新版本：$LATEST"
+         LATEST=${LATEST/#v/} # 去除字符v
+         # 使用支持版本号语义的sort -V提取最大的那个版本号
+         bigger_ver=$(printf '%s\n%s\n' "$LATEST" "$ver" | sort -V | tail -n1)
+
+         if [[ $bigger_ver == "$LATEST" ]]; then
+            echo "${WARN}有新版本可用！"
+            choice yes 是否继续[Y/n]？
+            yes yes "$yes"
+            update
+         elif ((LATEST == ver)); then
+            echo "没有新版本可用"
+         else
+            echo "${WARN}！警告：非法版本号，可能经过篡改，请检查正版性！"
+         fi
+         ;;
+      2)
+         raw_base="$GH_RAW/sha256.txt"
+         hash=$(sha256sum "$0" | awk '{print $1}')
+         echo "本地哈希值：$hash"
+         printf "匹配的哈希值："
+         if curl -fsSL "$raw_base" | grep -xFq "$hash"; then
+            echo "${SUC}检测为未经修改的、非预览版的正版！"
+         else
+            echo "${WARN}！您正在使用没有被录入hash值的版本，可能经过修改，或为盗版！"
+         fi
+         ;;
+      3) help ;;
+      "") exit 0 ;;
+      *) echo "未知选项" ;;
+   esac
+   quit msp_settings
+}
+
+apt_manager() {
+   chpkg apt
+   chpkg apt-mark
+   echo "1.安装包"
+   echo "1.1 只下载不安装包"
+   echo "2.更新索引"
+   echo "3.更新包"
+   echo "3.1 列出需更新的包"
+   echo "3.2 全面更新包"
+   echo "4.卸载包"
+   echo "4.1 卸载包但保留配置"
+   echo "5.重装包"
+   echo "6.列出所有包"
+   echo "6.1 列出所有已安装的包"
+   echo "6.2 列出所有未安装的包到文件"
+   echo "7.清理缓存"
+   echo "7.1 清理已卸载包的残留"
+   echo "7.2 删除无用依赖"
+   echo "8.查询文件属于哪个包"
+   echo "9.关键词搜索包"
+   echo "10.列出包的详情"
+   echo "11.查看包的可用版本与优先级"
+   echo "12.禁用自动升级"
+   echo "13.启用自动升级"
+   echo "14.查询被锁定的包"
+   echo "15.安装本地包"
+   echo "16.下载包"
+   choice choice
+   case $choice in
+      1) choice pkg 包名（pkg=1.2.3指定版本） && apt install -y "$pkg" ;;
+      1.1) choice pkg 包名 && apt install -d "$pkg" ;;
+      2) apt update ;;
+      3) choice pkg 包名（留空更新所有包） && apt upgrade "$pkg" ;;
+      4) choice pkg 包名 && apt purge -y "$pkg" ;;
+      5) choice pkg 包名 && apt install install --reinstall "$pkg" ;;
+      6) apt list ;; 6.1) apt list --installed ;;
+      6.2)
+         comm -23 <(apt list 2>/dev/null | cut -d/ -f1 | sort -u) \
+            <(dpkg-query -W -f='${Package}\n' | sort -u) >not_installed_pkg.txt
+         ;;
+      7) apt clean ;; 7.1) apt autoclean ;; 7.2) apt autoremove ;;
+      8) chpkg dpkg && choice path 文件路径 && dpkg -S "$path" ;;
+      9) choice pkg 包名 && apt search "$pkg" ;;
+      10) choice pkg 包名 && apt show "$pkg" ;;
+      11) choice pkg 包名 && apt policy "$pkg" ;;
+      12) choice pkg 包名 && apt-mark hold "$pkg" ;;
+      13) choice pkg 包名 && apt-mark unhold "$pkg" ;;
+      14) apt-mark showhold ;;
+      15) choice pkg 路径（必须是绝对路径或带./） && apt install "$pkg" -y ;;
+      16) choice pkg 包名 && apt download "$pkg" ;;
+   esac
+}
+
+ffmpeg_tools() {
+   chpkg ffmpeg && echo "文件格式取决于您的需求"
+   choice input 文件路径 && choice output 输出文件路径（可选）
+   output=${output:-./output}
+
+   echo "1.视频提取音频"
+   echo "2.视频去除音频"
+   echo "3.视频提取所有帧"
+   echo "0.ffmpeg命令行"
+   choice choice
+   case $choice in
+      1) ffmpeg -i $input -vn -c:a copy $output ;;
+      2) ffmpeg -i $input -an -c:v copy $output ;;
+      3)
+         mkdir -p $output
+         ffmpeg -i $input -qscale:v 2 -vsync 0 $output/%06d.jpg
+         ;;
+      0) mini_shell ffmpeg ;;
+      "") exit 0 ;; *) echo "选项未找到" ;;
+   esac
+   quit ffmpeg_tools
+}
+
+shell() {
+   # 配置
+   trap - INT && clear
+   conf="$HOME/.mspconf/mini_shell"
+   mkdir -p "$(dirname "$conf")"
+   [ -s "$conf" ] || echo '$ ' >"$conf"
+
+   export HISTFILE="$HOME/.mspconf/mini_shell.hty"
+   history -r 2>/dev/null && clear
+
+   PS1="$(<"$conf")"
+   export PS1
+
+   printf "%s" "$SUC"
+   while IFS= read -r -e -p "$PS1" cmd || {
+      history -w
+      exit 0
+   }; do
+      [[ $cmd ]] || continue
+      eval "$cmd"
+      history -s "$cmd"
+      printf "%s" "$SUC"
+   done
+}
+
+quit() {
+   [ -z "$2" ] || echo "${TURQUOISE}将要终止脚本！"
+   for i in 3 2 1; do
+      printf "\r%b按R重新运行，回车退出 还有%d秒…" "$TURQUOISE" "$i"
+      k=""
+      read -t 1 -s -r -n 1 k || true # 超时也不 continue
+      if [[ ${k^^} == R ]]; then     # ${k^^} 统一转大写
+         clear
+         eval "$1"
+         exit # 如果重启成功，旧进程直接退出
+      fi
+   done
+   cl trth
+}
+
+bmi_report() {
+   choice jin 体重（斤）
+   choice cm 身高（厘米）
+
+   # 基础校验
+   case $jin$cm in *[!0-9.]*)
+      printf "请输入纯数字！\n" >&2
+      exit 1
+      ;;
+   esac
+
+   printf "%b" "$COLOR"
+   awk -v j="$jin" -v c="$cm" '
+function risk(b){
+  if(b<18.5) return "营养不良、免疫力下降等风险升高"
+  if(b<24)   return "达到正常水平，理想范围内"
+  if(b<28)   return "高血压、糖尿病、心血管事件风险轻度升高"
+  return "中-重度以上慢病风险显著升高"
+}
+function suggest(b,kg){
+  if(b<18.5){ tgt=18.5*(h*h); d=(tgt-kg)*2; printf "建议增重 %.1f 斤\n",d; return }
+  if(b>=24){  tgt=23*(h*h);  d=(kg-tgt)*2; printf "建议减重 %.1f 斤\n",d; return }
+  printf "体重在推荐范围，继续保持\n"
+}
+BEGIN{
+  kg = j/2; h = c/100; bmi = kg/(h*h)
+
+  printf "\n重要提示：BMI对孕妇、儿童、老年人适用性差\n"
+  printf "极端异常数值会导致BMI严重失真\n"
+  printf "\n========== BMI 检测报告 ==========\n"
+  printf "身高: %.2f m   体重: %.1f kg (%.1f 斤)\n",h,kg,j
+  printf "BMI : %.2f kg/m²\n\n",bmi
+
+  if(bmi<18.5)       {who="偏瘦"; asia="偏瘦"; cn="偏瘦";}
+  else if(bmi<24.9)  {who="正常"; asia=(bmi<22.9?"正常":"超重"); cn=(bmi<23.9?"正常":"超重");}
+  else if(bmi<27)    {who="超重"; asia="超重"; cn="超重";}
+  else if(bmi<30)    {who="肥胖Ⅰ";asia="肥胖";cn="肥胖";}
+  else               {who="肥胖Ⅱ+";asia="肥胖";cn="肥胖";}
+
+  printf "分级对照:\n"
+  printf "  WHO 标准:  %s\n",who
+  printf "  亚洲标准:  %s\n",asia
+  printf "  中国标准:  %s\n",cn
+  printf "\n健康风险: %s\n",risk(bmi)
+  printf "调整建议: "; suggest(bmi,kg)
+  printf "====================================\n\n"
+}'
+   nocolor
+}
+
+date_tools() {
+   cat <<EOF
+1.date格式占位符使用
+1.1 帮助
+2.纳秒时间显示
+3.两个日期间相差的时间
+EOF
+   choice choice
+   case $choice in
+      1)
+         echo "date格式占位符命令行\n此命令行中无需输入'date +'前缀"
+         while true; do
+            read -p "date +> " option
+            date +"$option"
+         done
+         ;;
+      1.1)
+         cat <<EOF
+date 格式占位符
+%%   字面 %
+%a   缩写星期名             %A   完整星期名
+%b   缩写月名               %B   完整月名
+%c   locale 默认日期时间    %C   世纪
+%d   日                     %D   日期 mm/dd/yy
+%e   日，空格补位
+%F   等价 %Y-%m-%d
+%g   ISO 周所在年份后两位  %G   ISO 周所在年份四位
+%h   等价 %b               %H   小时 24h
+%I   小时 12h
+%j   年内第几天
+%k   24h，空格补位
+%l   12h，空格补位
+%m   月                    %M   分
+%n   换行                   %N   纳秒
+%p   AM/PM                %P   am/pm
+%r   12h 时间               %R   等价 %H:%M
+%s   Unix 秒戳              %S   秒
+%t   制表符                 %T   等价 %H:%M:%S
+%u   周几 1-7 (1=Mon)       %U   年第几周 00-53 周日始
+%V   ISO 年第几周 01-53
+%w   周几 0-6 (0=Sun)      %W   年第几周 00-53 周一始
+%x   locale 日期             %X   locale 时间
+%y   年两位                 %Y   年四位
+%z   +hhmm 时区    %:z  +hh:mm 时区
+%::z +hh:mm:ss 时区  %Z   时区缩写
+EOF
+         ;;
+      2)
+         while :; do
+            printf '\033[2J\033[H%s\n' "$(date '+%F %H:%M:%S.%3N.%6N.%9N')"
+         done
+         ;;
+      3)
+         echo "\n日期格式为：yyyy-mm-dd"
+         choice d1 起始日期
+         choice d2 结束日期
+
+         s1=$(date -d "$d1" +%s)
+         s2=$(date -d "$d2" +%s) s=$((s2 - s1))
+
+         sec="$s" hour=$((s / 3600))
+         day=$((s / 86400)) week=$((s / 604800))
+
+         y1=$(date -d "$d1" +%Y)
+         m1=$(date -d "$d1" +%m)
+         d1d=$(date -d "$d1" +%d)
+         y2=$(date -d "$d2" +%Y)
+         m2=$(date -d "$d2" +%m)
+         d2d=$(date -d "$d2" +%d)
+
+         month=$(((y2 - y1) * 12 + (m2 - m1)))
+         [ "$d2d" -lt "$d1d" ] && month=$((month - 1))
+         year=$((month / 12))
+
+         echo "\n秒：$sec\n小时：$hour\n天：$day"
+         echo "周：$week\n月：$month\n年：$year"
+         ;;
+      "") exit 0 ;;
+      *) echo "选项未找到" ;;
+   esac
+   quit date_tools
+}
+
+qrencode_tools() {
+   chpkg qrencode
+   echo "1.文本转二维码"
+   echo "2.扫描图片二维码"
+   echo "3.qrencode命令行"
+   choice choice
+   case $choice in
+      1)
+         choice text 文本
+         echo "$text" >text.tmp # 先把文本写入临时文件以便长文本
+         choice code 编码（可选，输入png编成图片）
+
+         case $code in
+            "") code=UTF8 ;;
+            png)
+               choice filename 文件名（可选）
+               filename=${filename:-qrcode.png} # 空就落默认值
+               qrencode -o "$filename" -m 10 -s 8 <text.tmp
+               ok && return 0
+               ;;
+         esac
+         qrencode -t "$code" -m 10 -s 8 <"$(cat text.tmp)"
+         echo "执行完毕"
+         ;;
+      2)
+         choice path 图像路径
+         zbarimg -q big.png | sed 's/^QR-Code://' # 显示扫描结果同时去掉去掉前缀
+         ;;
+      3) mini_shell qrencode ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit qrencode_tools
+}
+
+system_info() {
+   clear && chpkg fastfetch
+   fastfetch --structure none && fenge
+   cat <<EOF
+0.系统logo
+0.1 termux版本
+1.所有信息
+1.1 包含logo的所有信息
+1.2 部分信息
+1.3 复古式部分信息
+2.uname全部信息
+2.1 uname部分信息
+3.CPU架构
+3.1 位宽检测
+4.操作系统
+5.内核版本
+6.内核名
+7.内核编译时间
+8.主机名
+9.处理器类型
+10.系统CPU信息
+10.1 CPU所有信息
+11.内存占用
+12.资源管理器
+回车退出
+EOF
+   choice choice
+   case $choice in
+      0) clear && fastfetch --structure none ;;
+      0.1)
+         t="$TERMUX_VERSION"
+         [ -z "$t" ] && echo "$t_ver" || echo "非termux终端"
+         ;;
+      1) fastfetch --logo none --logo-type none ;;
+      1.1) fastfetch ;; 1.2) chpkg neofetch && neofetch ;;
+      1.3) chpkg screenfetch && screenfetch ;;
+      2) uname -snrvmpio | sed 's/unknown//g' ;;
+      2.1) uname -a ;; 3) uname -m ;;
+      3.1)
+         # 用getconf获取位宽
+         case $(getconf LONG_BIT) in
+            64) echo "您的设备为64位，支持大多数现代应用" ;;
+            32) echo "您的设备为32位，比较老旧，支持少数现代应用" ;;
+            *) echo "您的设备为$bitlong位，我不认识" ;;
+         esac
+         ;;
+      4) uname -o ;; 5) uname -r ;;
+      6) uname -s ;; 7) uname -v ;;
+      8) uname -n ;; 9) uname -p ;;
+      10)
+         # 如果bat命令不存在则替换成cat并退出
+         command -v "bat" >/dev/null || { cat cpuinfo && system_info; }
+         bat /proc/cpuinfo
+         ;;
+      10.1) lscpu ;; 11) free ;;
+      12)
+         # 如果htop命令不存在则替换成top并退出
+         command -v "htop" >/dev/null || {
+            echo "建议安装htop再使用此功能" && top
+            system_info
+         }
+         htop
+         ;;
+      "") exit 0 ;;
+      *) echo "${ERR}ERR: 未知选项" ;;
+   esac
+   quit system_info
+}
+
+hitokoto_original() {
+   # 类别列表
+   CATEGORIES="
+a 动画  b 漫画
+c 游戏  d 文学
+e 原创  f 来自网络
+g 其他  h 影视
+i 诗词  j 网易云
+k 哲学  l 抖机灵"
+   printf "可选类别：%s\n\n" "$CATEGORIES" # 打印类别列表
+
+   # 让用户选类别（回车=随机）
+   choice TYPE 类别字母（默认随机）
+   # 如果 TYPE 还没被赋值，就把类别列表随机挑一个赋给它
+   TYPE=${TYPE:-$(printf '%s' "$CATEGORIES" | tr ' ' '\n' | shuf | head -n1)}
+
+   choice 输出几句（默认1句）
+   COUNT=${COUNT:-1}
+   # 如果COUNT为空或非数字则默认为1
+   case $COUNT in '' | *[!0-9]*) COUNT=1 ;; esac
+   # 获取提示，显示进度条
+   printf "\n正在获取 %d 句，类别「%s」…\n" "$COUNT" "$TYPE" >&2
+
+   # 4. 轮询获取
+   RESULT=""
+   i=1
+   while [ "$i" -le "$COUNT" ]; do
+      printf "\r进度 %d/%d" "$i" "$COUNT" >&2
+
+      # 随机类别 + 随机尾巴避免缓存
+      RAND_CAT=$(printf '%s' "$CATEGORIES" | tr ' ' '\n' | shuf | head -n1)
+      URL="https://international.v1.hitokoto.cn/?c=${RAND_CAT}&encode=json&_t=$(date +%s%N)"
+
+      RAW=$(curl -sf --max-time 20 "$URL" 2>/dev/null)
+      if [ -n "$RAW" ]; then
+         H=$(printf '%s\n' "$RAW" | awk -F'"hitokoto":"' '{print $2}' | cut -d'"' -f1)
+         F=$(printf '%s\n' "$RAW" | awk -F'"from":"' '{print $2}' | cut -d'"' -f1)
+         RESULT="$RESULT「$H」——《$F》"$'\n'
+         i=$((i + 1))
+      fi
+
+      sleep 1.2
+   done
+
+   cl up
+   printf "%b" "$RESULT"
+}
+
+hitokoto() {
+   echo "1.60s镜像站(快但单一)"
+   echo "2.injahow镜像站(快但单一)"
+   echo "3.今日诗词镜像站(快但只有诗词)"
+   echo "0.原生API方式(略慢但可自定义)"
+   choice input 方式
+   case $input in
+      1) curl "https://60s.viki.moe/v2/hitokoto" | jq -r '.data.hitokoto' ;;
+      2) curl "https://api.injahow.cn/hitokoto/" | jq ;;
+      3) curl "https://v1.jinrishici.com/rensheng.txt" | glow ;;
+      0) hitokoto_original ;;
+      "") exit 0 ;;
+      *) echo "未知方法" ;;
+   esac
+   quit hitokoto
+}
+
+funny_program() {
+   path=~/app
+   ghproxy="https://gh-proxy.com"
+   mkdir -p $path && cd $path
+   chpkg git
+   echo "1.fakeroot 伪装root"
+   echo "2.fuck-u-code 屎山代码检测器"
+   echo "3.genact 假装自己很忙"
+   echo "4.bh 存储在云端的bash历史记录"
+   echo "5.fanyi 中英文互翻译"
+   echo "6.tldr 中文迷你命令手册"
+   choice choice
+   case $choice in
+      1) apt install fakeroot -y && echo "安装完成\n输入fakeroot进入root" ;;
+      2)
+         chpkg golang
+         go install github.com/Done-0/fuck-u-code/cmd/fuck-u-code@latest
+         echo "已安装fuck-u-code"
+         ;;
+      3)
+         chpkg rust
+         git clone "$ghproxy/https://github.com/svenstaro/genact.git"
+         cd genact && cargo run --release && echo "已安装在$(pwd)"
+         ;;
+      4)
+         git clone "$ghproxy/https://github.com/rcaloras/bashhub-client.git"
+         cd bashhub-client && echo "克隆已完成" && echo "如果部署，将会在bashhub.com创建新用户" && echo "将会询问您的email，用户名，仓库名" && read -p "是否部署？[Y/n]" input
+         sh install-bashhub.sh && echo "部署已完成，安装在$path/bashhub-client，输入bh使用"
+         ;;
+      5)
+         chpkg nodejs
+         npm i fanyi -g
+         ;;
+      6)
+         chpkg tealdeer
+         URL="https://mirrors.tuna.tsinghua.edu.cn/github-release/tldr-pages/tldr/latest/download/tldr-pages.zh_CN.zip"
+         printf 'export TLDR_ARCHIVE_URL="%s"\n' "$URL" >>~/.bashrc
+         source "$shellrc"
+         tldr --update
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit funny_program
+}
+
+backup() {
+   read -p "备份$str_shellrc请输入1，备份此脚本请输入2，全部备份请输入3：" input
+   case $input in
+      1) cp -f $shellrc "/sdcard/" && echo "已备份 $str_shellrc 到 /sdcard/" ;;
+      2) cp -f "$0" "/sdcard/" && echo "已备份本脚本到 /sdcard/" ;;
+      3)
+         cp -f $shellrc /sdcard/ && cp -f "$0" /sdcard/
+         echo "已全部备份到 /sdcard/"
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit backup
+}
+
+help() {
+   clear && ascii_termux && fenge
+   echo "${CYAN}版本：$ver $ver_type版\n"
+   echo "作者：$Author"
+   cat <<\EOF
+MSp / MSpace / Menu Space / 菜单空间
+   旨在为用户创造快捷方便自动化的termux
+配置文件位于 ~/.mspconf
+用法：
+    msp  进入交互式界面
+    msp <函数>  输入函数名可直接调用该函数
+    |____ msp fmt        立即格式化msp代码
+    |____ msp e          快速编辑脚本
+          |____ msp e 5  编辑脚本第五行
+    |____ msp bk         复制脚本到sdcard
+    |____ msp debug     调试选项
+    |____ msp update     从github更新
+    |____ msp help       获取此帮助
+    |____ msp get_width  获取屏宽
+    |____ msp u          更新msp
+          |____ msp u d  从 /sdcard/msp 更新msp
+    |____ other           其他
+
+说明：
+    脚本内 echo 自带 -e 选项
+    脚本内 read 自带 -r 选项
+    脚本内循环 Ctrl + C 可强制退出
+    请勿在脚本内随便输入什么东西，有可能会导致对设备的破坏
+    代码内有注释，可放心食用
+    脚本将自动把选项输入转换成小写，所以大小写都可以
+    代码/资料来源于网络和github
+    有bug及时反馈
+
+ShellCheck：
+    屏蔽
+    SC2028 SC2086 SC2162
+    SC1091 SC2088 SC2015
+    SC1081 SC2164 SC2120
+    SC1090 SC1091 SC2154
+    SC2119 SC2005
+    这是因为这些报告对脚本起不到什么帮助，
+    甚至说这个本身就没用，
+    绝不是因为我想骗人！！！
+    此脚本的某些快捷函数shellcheck可能看不懂
+    脚本根据shellcheck的报告修改
+
+可用配置项：
+    IS_TERMUX           如果此项为true，则进入脚本不再检测环境是否为termux
+    PKG_CHECK          如果此项为false，则进入脚本时不强制询问是否安装某个包
+    USERNAME_DISPLAY   此项为其他时，用户名输出无改变（默认）;
+                         此项为1时，用户名用渐变色色输出（运行速度变慢）;
+                         此项为2时，用户名用绚丽的渐变色输出（运行速度大幅变慢）
+
+==> MSpace不断变得更好
+EOF
+   quit help
+
+}
+bilibili_api() {
+   echo "1.推荐视频榜单"
+   echo "2.视频排行榜"
+   echo "3.热搜榜单"
+   echo "4.热门视频"
+   echo "5.精选必看视频"
+   echo "6.封号用户名单"
+   choice choice
+   case $choice in
+      1) curl 'https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd' | jq ;;
+      2) curl 'https://api.bilibili.com/x/web-interface/ranking/v2 | jq' ;;
+      3) curl -G --url 'https://api.bilibili.com/x/web-interface/search/square' \ --url-query 'limit=4' | jq ;;
+      4) curl 'https://api.bilibili.com/x/web-interface/popular' | jq ;;
+      5) curl 'https://api.bilibili.com/x/web-interface/popular/precious' | jq ;;
+      6) curl 'https://api.bilibili.com/x/credit/blocked/list' | jq ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit bilibili_api
+}
+
+game() {
+   clear
+   echo "1.随机数字"
+   echo "2.暴力匹配文本"
+   read -p "请输入选项：" choice
+   case $choice in
+      1)
+         choice min 最小值
+         choice max 最大值
+         choice 数量（0为无限） num
+         if [ "$num" = "0" ]; then
+            while :; do shuf -i ${min}-${max} && sleep 0.5; done
+         else
+            shuf -i ${min}-${max} -n ${num}
+         fi
+         ;;
+      2)
+         read -p "请输入文本：" text
+         python -c "
+import string
+import time
+
+text = '$text'
+temp = ''
+
+for ch in text:
+    for i in string.printable:
+        if i == ch:
+            time.sleep(0.02)
+            print(temp + i)
+            temp += ch
+            break
+        else:
+            time.sleep(0.009)
+            print(temp + i)"
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit game
+}
+
+ai_api() { blocked; }
+
+developer_tools() {
+   chocie path 脚本路径（留空即此脚本）
+   [ -z "$scr" ] && scr="$0"
+   chfile "$path"
+   echo "1.复制脚本到sdcard"
+   echo "2.查找脚本字符"
+   echo "3.计算脚本精确大小"
+   choice choice
+   case $choice in
+      1) cp "$path" /sdcard/ ;;
+      2)
+         choice char 要查找的字符
+         grep -n --color=always "$char" "$path"
+         ;;
+      3) wc -c <"$scr" | LC_ALL=C numfmt --to=iec --suffix=B --format='%.4f' ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit developer_tools
+}
+
+new_menu() {
+   echo "1.每日60s新闻"
+   echo "2.ai新闻"
+   choice choice
+   case $new_choice in
+      1) curl https://60s.viki.moe/v2/ai-news | jq ;;
+      2) curl https://60s.viki.moe/v2/60s | jq ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit new_menu
+}
+
+# ASCII 艺术字
+ascii_termux() {
+   printf "%b" "$LIME"
+   cat <<\EOF
+    __  ________
+   /  |/  / ___/____  ____ _________
+  / /|_/ /\__ \/ __ \/ __ `/ ___/ _ \
+ / /  / /___/ / /_/ / /_/ / /__/  __/
+/_/  /_//____/ .___/\__,_/\___/\___/
+            /_/
+EOF
+}
+
+# msp配置
+msp_conf() {
+   cd "$base_dir" && echo "$(pwd)"
+   echo "1.列出配置目录"
+   echo "2.添加文件到此目录"
+   echo "3.查看颜色配置文件"
+   echo "4.复制颜色文件到/sdcard/"
+   echo "5.查看配置文件的配置项"
+   echo "5.1 写入内容到配置文件"
+   echo "6.清空此目录"
+   choice choice
+   case $choice in
+      1) ls "$base_dir/" ;;
+      2)
+         choice file 文件路径
+         chfile "$file"
+         mv "$file" "$base_dir/" && ok
+         ;;
+      3) cat $color_file ;;
+      4) cp color.conf /sdcard/ && ok ;;
+      5) cat "$base_dir/configure" ;;
+      5.1)
+         choice input 一条配置
+         echo "$input" >>configure && ok
+         ;;
+      6)
+         choice yes 确认要清空吗[Y/n]
+         yes yes "$yes" && rm ./* && ok
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit msp_conf
+}
+
+# Termux 工具菜单
+termux_tools() {
+   echo "1.给当前会话添加唤醒锁"
+   echo "2.恢复termux字体为原本字体"
+   echo "3.提取顶部的ASCII字termux"
+   echo "4.提取/编辑termux欢迎语"
+   echo "5.重载termux设置"
+   echo "6.编辑小键盘设置"
+   echo "7.修改小键盘为方便形式"
+   echo "8.安装x11-repo"
+   echo "9.备份termux数据相关"
+   choice choice
+   case $choice in
+      1) termux-wake-lock && echo "唤醒锁已添加" ;;
+      2) rm -f ~/.termux/font.ttf ~/.termux/colors.properties && termux-reload-settings ;;
+      3) ascii_termux ;;
+      4)
+         path="$PREFIX/etc/motd"
+         chfile "$path"
+         choice sub.提取（1）编辑（2）
+         case $sub in 1) cat "$path" ;; 2) nano "$path" ;; esac
+         ;;
+      5) termux-reload-settings ;;
+      6) nano ~/.termux/termux.properties ;;
+      7)
+         cat >~/.termux/termux.properties <<'EOF'
+extra-keys=[["ESC","<",">","BACKSLASH","=","^","$","()","{}","[]","_"],["TAB","&",";","#","~","%","*","HOME","UP","END","PGUP"],["CTRL","ALT","@","QUOTE","\'",",","|","LEFT","DOWN","RIGHT","PGDN"]]
+EOF
+         termux-reload-settings
+         echo "建议搭配讯飞输入法更加方便（不是广告）"
+         ;;
+      8) pkg i x11-repo ;;
+      9)
+         time=$(date +%Y-%m-%d_%H:%M:%S)
+         choice sub 备份（1）恢复（2）
+         case $sub in
+            1) termux-backup "/sdcard/termux-backup_${time}.tar.gz" ;;
+            2)
+               choice p 备份文件路径
+               termux-restore "$p"
+               ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit termux_tools
+}
+
+# ADB 菜单
+adb_menu() {
+   chpkg adb
+   adb start-server &>/dev/null &
+   read -p "输入IP(例如192.168.0.1): " ip
+   read -p "输入端口号(例如5555): " port
+   if ! adb connect "$ip:$port"; then
+      echo "${ERR}ERR: 报错"
+      exit 1
+   fi
+
+   clear
+   echo "0. 退出"
+   echo "1. 输入文字"
+
+   read -p "请输入选项：" input
+   case $input in
+      0) return 0 ;;
+      1)
+         choice text 文本
+         text="${text#"${text%%[![:space:]]*}"}"
+         text="${text%"${text##*[![:space:]]}"}"
+         [[ -z $text ]] && {
+            echo "输入为空，已取消"
+            return 1
+         }
+         b64=$(printf '%s' "$text" | base64 -w0)
+         adb shell "base64 -d <<< '$b64' | xargs -0 input text"
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit afb_menu
+}
+
+# 资源列表
+resource() {
+   echo "1.SCP基金会  2.多邻国破解  3.Beyond音乐\n4.无损音乐"
+   read -p "请选择：" sub
+   case $sub in
+      1) echo "https://scp-wiki-cn.wikidot.com/" ;;
+      2)
+         echo "${GOLD}1.[推荐]蓝奏云（更多选择）${N}\n2.123云盘（分类明确）"
+         choice s
+         case $s in
+            1) echo "https://yxssp.lanzoui.com/b0q6iadi" ;;
+            2) echo "https://www.123684.com/s/zy7dvd-DubKv" ;;
+            3) echo "https://www.123684.com/s/zy7dvd-rubKv" ;;
+         esac
+         ;;
+      3) echo "https://www.123684.com/s/zy7dvd-tWZKv" ;;
+      4) echo "https://www.123684.com/s/zy7dvd-cWZKv" ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit resource
+}
+
+# 加解密工具
+enc_tools() {
+   choice path 文件路径
+   choice choice GPG（1）shc（2）
+   case $choice in
+      1)
+         chpkg gpg
+         choice sub 加密（1）解密（2）
+         case $sub in
+            1) gpg -c "$path" ;;
+            2) gpg --decrypt "$path" >"${path%.gpg}" ;;
+         esac
+         ;;
+      2)
+         chpkg shc
+         choice sub 是否加密
+         case $sub in
+            1)
+               if shc -f "$path" -o "$path.out"; then
+                  ok
+               else
+                  echo "${ERR}ERR: 出现报错"
+                  echo "可能的原因：脚本没有shebang / 脚本本身有错误"
+               fi
+               ;;
+         esac
+         ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit enc_tools
+}
+
+# pd 菜单
+proot_distro_menu() {
+   chpkg pd
+   cat <<'EOF'
+执行操作：
+1.安装系统
+2.登录系统
+3.获取帮助
+4.列出所有系统
+5.其他命令
+EOF
+   choice choice
+   case $choice in
+      1)
+         choice dis 可安装的系统
+         pd install "$dis" && ok
+         ;;
+      2)
+         choice dis 已安装的系统
+         pd login "$dis"
+         ;;
+      3) pd -h ;; 4) pd list ;; 5) mini_shell pd ;;
+      "") exit 0 ;; *) echo "未知选项" ;;
+   esac
+   quit proot_distro_menu
+}
+
+rb() {
+   if command -v toilet &>/dev/null; then
+      raw=$(toilet -f term "$1")
+      printf '%s\n' "$raw" |
+         awk '
+function fmod(x,d){return x-int(x/d)*d}
+
+# 零分支彩虹 + 去灰，复杂度=1
+function hslrgb(h,    n,r,g,b,d,rr,gg,bb){
+  n=int(h*=6); h-=n                          # n∈0~5, h∈[0,1)
+  r= n==0||n==5 ? 255 : n==1 ? 255*(1-h) : n==4 ? 255*h : 0
+  g= n==1||n==2 ? 255 : n==0 ? 255*h     : n==3 ? 255*(1-h) : 0
+  b= n==3||n==4 ? 255 : n==2 ? 255*h     : n==5 ? 255*(1-h) : 0
+  rr=int(r); gg=int(g); bb=int(b)
+  d=(rr-gg)*(rr-gg)+(gg-bb)*(gg-bb)+(bb-rr)*(bb-rr)
+  if(d<2700){
+    if(rr>=gg&&rr>=bb)      {rr-=40; gg=(gg+20)%256}
+    else if(gg>=bb)         {gg-=40; bb=(bb+20)%256}
+    else                    {bb-=40; rr=(rr+20)%256}
+  }
+  return rr";"gg";"bb
+}
+
+BEGIN{srand()}
+{ base=rand()
+  out=""
+  for(i=1;i<=length($0);i++){
+    c=substr($0,i,1)
+    if(c==" "){out=out " "; continue}
+    rgb=hslrgb(fmod(base+i/40,1))
+    out=out "\033[38;2;" rgb "m" c
+  }
+  print out "\033[0m"
+}'
+   else
+      printf "%s\n" "$1"
+   fi
+}
+
+username() {
+   NAME=${NAME:-$(whoami)}
+   case $USERNAME_DISPLAY in
+      1) rb "${NAME:-$(whoami)}" ;;
+      2) printf "%*s\n" $(($(tput cols) - 5)) "$NAME" | lolcat -f -s 10 -p 0.5 ;;
+      *) printf "%s" "$NAME" ;;
+   esac
+   echo
+}
+
+hello() {
+   fenge
+   ascii_termux
+   printf "你好！" && username
+   echo "${LIME}您已使用脚本 $days ${LIME}天了" && fenge
+}
+########################################################################
+# 主菜单
+main_menu() {
+   hello
+   if [ "$IS_TERMUX" != "true" ]; then
+      [ -z "$TERMUX_VERSION" ] && echo "${WARN}！非 Termux 环境，部分选项可能无法使用 ！${N}"
+   fi
+   printf "%b" "$GOLD"
+   cat <<EOF
+0.termux功能菜单
+1.更换镜像源
+2.启动 VNC 服务器
+3.ADB 菜单
+4.一键打包GKD订阅
+5.编辑$str_shellrc
+6.JavaScript题库
+7.龙图获取
+8.BLOCKED
+9.看看运势
+10.添加命令
+11.尝试调用 Tmoe 工具
+12.启动 Python 静态文件服务器
+13.加解密文件/脚本
+14.检查脚本是否有错
+15.使用base64编解码文本
+16.输入名称
+17.安装所有可用的 Shell 解释器
+18.IP地址信息查询
+19.Hitokoto 一言句子获取
+20.获取当前精确时间
+21.qrencode工具箱
+22.部署 Shizuku 的 Rish
+23.手机 TTS 说话
+24.PRoot-Distro 管理菜单
+25.ASCII艺术字生成
+26.启动xfce4
+27.系统/设备信息
+28.格式化shell脚本
+29.优化nano
+30.历史命令频率树
+31.迷你Shell
+32.date工具
+33.BMI检测
+34.FFmpeg工具箱
+35.安装Rustup程序
+36.把压缩包隐藏进图片
+37.给Mihomo增加图形界面
+38.APT管理
+39.备份文件
+EOF
+   printf %b $ORANGE
+   cat <<EOF
+a.BLOCKED
+b.备份此脚本及$str_shellrc
+c.复制此脚本内容到剪贴板
+e.编辑此脚本
+f.有趣的包
+g.小游戏
+s.设置
+u.更新此脚本
+v.查看版本
+p.前往发布页
+h.获取帮助
+m.此脚本相关设置
+r.更多资源
+dt.开发者工具
+ad.高级
+EOF
+   printf %b $OLIVE
+   cat <<EOF
+up.从远程获取最新版本的更新
+new.各种新闻
+bing.查看必应每日图片
+ai.BLOCKED
+blbl.哔哩哔哩API相关
+hot.头条热搜
+rzb.弱智吧美言
+EOF
+   echo "${RUST}*.退出"
+   fenge
+   choice choice
+   echo
+   menu_choice=${choice,,}
+   # 功能
+   case $menu_choice in
+      0) termux_tools ;;
+      1) termux-change-repo ;;
+      2)
+         chpkg startvnc
+         startvnc
+         ;;
+      3) adb_menu ;;
+      4) echo "https://wwse.lanzoub.com/iAbYD31kwlcf" ;;
+      5) nano $shellrc ;;
+      6) curl https://60s.viki.moe/v2/awesome-js | jq -r '.data' ;;
+      7)
+         # 指定url
+         url="https://api.yujn.cn/api/long.php?type=image"
+         echo "$url"
+         echo "1.批量预览\n2.批量下载"
+         choice choice
+         case $choice in
+            1)
+               choice 预览数量（0即无限） num
+               if [ "$num" = "0" ]; then
+                  while true; do
+                     curl -L -s "$url" | chafa
+                     sleep 1
+                  done
+               else
+                  # 指定数量预览
+                  for i in $(seq 1 "$num"); do curl -L -s "$url"; done
+               fi
+               ;;
+            2)
+               choice num 下载数量，0即无限
+               choice path 保存路径（可选）
+               [ -z "$path" ] || path=/sdcard
+               if [ "$num" = "0" ]; then
+                  # 无限下载
+                  i=1
+                  while true; do
+                     # -L 重定向 + -O 保存
+                     wget -L -O "${path}/$i.jpg" "$url"
+                     sleep 2 # 防止过快
+                     ((i++)) # i自增
+                  done
+               else
+                  for i in $(seq 1 "$num"); do
+                     wget -L -O "${path}/$i.jpg" "$url"
+                     sleep 1
+                  done
+               fi
+               ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      8) blocked ;;
+      9) curl https://60s.viki.moe/v2/luck | jq -r '.data.luck_tip' ;;
+      10)
+         choice cmd_name 命令名称
+         choice cmd 要执行的内容
+         printf 'alias %s="%s"\n' "$cmd_name" "$run" >>$shellrc && ok
+         ;;
+      11) bash -c "$(curl -L https://gitee.com/mo2/linux/raw/2/2)" ;;
+      12)
+         choice port 端口号（默认8000）
+         choice path 服务器根路径（默认当前目录）
+         port=${port:-8000} path=${path:-./}
+         cd "$path" && python -m http.server "$port"
+         ;;
+      13) enc_tools ;;
+      14)
+         choice choose 自我检查还是检查其他脚本[1/2]
+         case $choose in
+            1) p=$0 ;;
+            2) choice p 脚本路径 ;;
+            "") exit 0 ;;
+            *) echo "未知选项" && exit 1 ;;
+         esac
+
+         # 使用p变量
+         cat <<'EOF'
+1.bash -n 原生检查
+2.shellcheck 详细检查
+3.检查兼容性(sh -n)
+EOF
+         choice type 检查方式
+         case $type in
+            1) bash -n "$p" ;;
+            2) shellcheck "$p" ;;
+            3) sh -n "$p" ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      15)
+         choice sub 编码还是解码[1/2]
+         case $sub in
+            1)
+               choice text 文本
+               printf '%s' "$t" | base64
+               ;;
+            2)
+               choice text base64
+               printf '%s' "$t" | base64 -d
+               ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      16)
+         echo "提示：名称含有空格会导致脚本报错\n名字不要过长哦"
+         read -p "请输入一个名字：" name
+         printf 'NAME=%s\n' "$name" "$(<$shellrc)" >${shellrc}.new &&
+            mv ${shellrc}.new $shellrc
+         echo "执行命令source $str_shellrc即可"
+         ;;
+      17)
+         shellpkg="bash dash zsh fish tcsh nushell mksh elvish loksh busybox"
+         echo "安装列表：$shellpkg" && pkg update && apt install -y $shellpkg
+         ;;
+      18)
+         choice ip_address IP地址（留空则使用本机IP）
+         ip=${ip:-$(curl -s ip.sb)}
+         curl -s "http://ip-api.com/json/$ip_address?fields=66842623&lang=zh-CN" | jq .
+         ;;
+      19) hitokoto ;;
+      20) while :; do printf '\033[2J\033[H%s\n' "$(date '+%F %H:%M:%S.%3N.%6N.%9N')"; done ;;
+      21) qrencode_tools ;;
+      22)
+         file_name="017936dd7a59530cef038760295253912Q.zip"
+         URL="https://file.uhsea.com/2510/${file_name}"
+         mkdir -p ~/.shizuku && cd ~/.shizuku
+         wget -q "$URL"
+         echo "下载已完成\n正在解压文件..."
+         unzip -oj $file_name && rm ${file_name} &
+         chmod +x rish
+         grep -q 'alias rish=' "$shellrc" || echo "alias rish='sh $HOME/.shizuku/rish'" >>"$shellrc"
+         printf "操作已完成，输入rish即可启动\n是否直接启动？[y/N]：" && read yes
+         yes yes "$yes"
+         rish
+         ;;
+      23) choice input 要朗读的文字 && termux-tts-speak "$input" && ok ;;
+      24) proot_distro_menu ;;
+      25)
+         chpkg figlet
+         choice text
+         printf "%b" "$PASTEL_ORCHID" && figlet "$text"
+         ;;
+      26)
+         chpkg startxfce4
+         chpkg termux-x11-nightly
+         export DISPLAY=:689
+         termux-x11 :689 & # 后台运行x11
+         sleep 2 && startxfce4 &
+         am start -n com.termux.x11/.MainActivity # 直接启动x11
+         ;;
+
+      27) system_info ;;
+
+      28)
+         choice scriptpath 脚本路径（留空则此脚本）
+         [ -z "$scriptpath" ] && scriptpath="$0"
+         shfmt -i 3 -ci -s -w $scriptpath && ok
+         ;;
+
+      29)
+         echo "1.改配置"
+         echo "2.改高亮"
+         choice choice
+         case $choice in
+            1)
+               echo "此操作将会改变nano的一些操作逻辑，可能需要一些时间适应" && enter
+               cat >~/.nanorc <<'EOF'
+set linenumbers         # 永久行号
+set mouse               # 点击移动光标
+set nowrap              # 关闭硬换行
+EOF
+               ;;
+            2)
+               git clone https://gh-proxy.org/github.com/scopatz/nanorc.git ~/.nano
+
+               echo 'include "~/.nano/*.nanorc"' >>~/.nanorc
+               ;;
+         esac
+         ;;
+
+      30)
+         # 检测history是否有记录
+         [ "$(history | wc -l)" = "0" ] && echo "当前历史无记录！" && exit 1
+         history | awk '{CMD[$2]++} END {for(c in CMD) print CMD[c] "\t" c}' |
+            sort -nr | head -n 30 | column -t
+         ;;
+      31) shell ;;
+      32) date_tools ;;
+      33) bmi_report ;;
+      34) ffmpeg_tools ;;
+      35) echo "依次输入y, 1" && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh ;;
+      36)
+         echo "支持的格式：\n图片：jpg, png, gif, bmp"
+         echo '压缩包：zip, rar(v4, v5), 7z'
+         choice zipfile 压缩包路径
+         choice imgfile 图片路径
+         choice outfile 输出文件路径（可选）
+         [ -n "$outfile" ] || outfile="$(dirname "$imgfile")/hide.bin"
+         chfile "$zipfile"
+         chfile "$imgfile"
+         cat "$imgfile" "$zipfile" >"$outfile" && echo "文件已保存在$outfile"
+         ;;
+      37)
+         URL="https://gh-proxy.com/github.com/MetaCubeX/metacubexd/releases/latest/download/compressed-dist.tgz"
+         config_dir="$HOME/.config/mihomo"
+         backend="http://127.0.0.1:9178"
+         filename="compressed-dist.tgz"
+         wget -O "$filename" "$URL" || { echo "$ERR$URL下载失败" >&2 && exit 1; }
+         tmp_dir="${filename}.dir"
+         mkdir "$tmp_dir" && mv "$filename" "$tmp_dir" && cd "$tmp_dir"
+         tar -xzf "$filename" || echo "$filename解压失败" >&2 && exit 1
+         cd .. && mv "$tmp_dir" "$config_dir/ui"
+         cat >"$config_dir/config.yaml" <<'EOF'
+external-controller: 127.0.0.1:9178
+external-ui: ui
+secret: ""
+EOF
+         choice pathtoelf mihomo程序的路径
+         chfile $pathtoELF
+         if ! "$pathtoELF" -d "$config_dir" &>/dev/null; then
+            echo "程序未正常启动" >&2
+            exit 1
+         fi
+         echo "之后启动mihomo再打开localhost:9178/ui就能用了"
+         printf "是否立即打开图形界面[Y/n]："
+         read yes && yes yes "$yes"
+         open "$backend" || echo "打开失败" >&2
+         ;;
+      38)
+         choice path 文件路径
+         chfile "$path"
+         cp "$path" "${path}.bak"
+         ;;
+      39) apt_manager ;;
+
+         #####################################################################
+      a) blocked ;;
+      b) backup ;;
+      c)
+         read -p "0.复制命令输出结果 1.复制此脚本 2.复制$str_shellrc 3.自定义：" input
+         case $input in
+            0)
+               choice cmd 命令
+               eval "$cmd" | termux-clipboard-set && ok
+               ;;
+            1) cat $0 | termux-clipboard-set && ok ;;
+            2) cat $shellrc | termux-clipboard-set && ok ;;
+            3)
+               choice path 路径
+               cat $path | termux-clipboard-set && ok
+               ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      e) nano $0 ;;
+      f) funny_program ;;
+      g) game ;;
+      p)
+         url='https://www.123684.com/s/zy7dvd-VsbKv?pwd=y3lH#'
+         echo "$url" && open "$url"
+         ;;
+      h | help) help ;;
+      s | settings) msp_settings ;;
+      dt) developer_tools ;;
+      ad)
+         echo "1.加载函数"
+         read -p "请输入选项：" choice
+         case $choice in
+            1)
+               choice fn 函数名
+               type -t "$fn" &>/dev/null || {
+                  echo "${BR_RED}ERROR: $fn: 函数不存在"
+                  exit 1
+               }
+               "$fn"
+               ;;
+            "") exit 0 ;;
+            *) echo "未知选项" ;;
+         esac
+         ;;
+      m) msp_conf ;;
+      r) resource ;;
+      u) u ;;
+      v) echo "v$ver $ver_type版" ;;
+
+         #########################################################
+      up | update) update ;;
+      new) new_menu ;;
+      bing) echo "$(curl -sL https://60s.viki.moe/v2/bing | jq -r '.data.cover_4k')" ;;
+      ai)
+         blocked
+         while read -p "==> " message; do
+            ai_api "$message"
+         done
+         ;;
+      blbl | bilibili | bl) bilibili_api ;;
+      hot) curl - https://60s.viki.moe/v2/toutiao | jq ;;
+      rzb | ruozhiba)
+         while true; do
+            curl -s https://www.7ed.net/ruozi/api | jq -r '.ruozi'
+            enter 继续，n退出
+            [ "$enter" = "n" ] && break
+         done
+         ;;
+      "") exit 0 ;;
+      *) echo "${ERR}ERR: $choice: 选项未找到${N}" ;;
+   esac
+}
+
+########################################
+
+if [[ -n $func ]]; then
+   if type -t "$func" | grep -q function; then
+      # 把函数名和参数分开
+      "$func" "$@" && STAT=$SUC || STAT=$ERR
+      fenge
+      exit_code=$?
+      echo "${STAT}执行完毕\n退出码：$exit_code"
+   fi
+   exit 0
+fi
+
+# 主流程
+main_menu
+
+###########################################################
+quit "exec $0" msp # exec $0作为参数1，参数2充数的

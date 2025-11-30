@@ -8,7 +8,7 @@ MSp / MSpace / Menu Space / 菜单空间
 
 ## 安装
 ``` Shell
-curl -s https://gh-proxy.org/raw.githubusercontent.com/openwang6892/MSpace/refs/heads/main/installer/install.sh | bash
+curl -s https://gh-proxy.org/raw.githubusercontent.com/openwang6892/MSpace/refs/heads/main/install.sh | bash
 ```
 跟着提示一步步来
 就这么简单！安装完成后输入`msp`立即开始
