@@ -23,7 +23,7 @@ color_file="$HOME/.mspconf/color.conf"
 
 # 变量区
 filename=$(basename "$0")
-VERSION=3.6.1 VType=正式 Author=wangxia
+VERSION=3.6.2 VType=正式 Author=wangxia
 GH_PROXY="https://gh-proxy.org"
 GH_REPO="openwang6892/MSpace"
 GH_RAW="$GH_PROXY/https://raw.githubusercontent.com/${GH_REPO}/refs/heads/main"
@@ -132,8 +132,8 @@ die() {
 
 yesno() {
    case $1 in
-      no) [[ $2 =~ [yY] ]] || exit 0 ;;
-      yes) [[ $2 =~ [nN] ]] || exit 0 ;;
+      no) [[ $2 =~ [yY] ]] && exit 0 ;;
+      yes) [[ $2 =~ [nN] ]] && exit 0 ;;
    esac
 }
 
@@ -234,7 +234,7 @@ EOF
          # 通过github api获取最新版
          LATEST=$(curl -s "${GH_PROXY}/https://api.github.com/repos/${GH_REPO}/releases/latest" | grep -oP '"tag_name": "\K[^"]+') || die "无法获取最新版本"
 
-         echo "${GOLD}最新版本：$LATEST${N}"
+         echo "${GOLD}最新版本：$LATEST${N}\n"
          LATEST=${LATEST/#v/} # 去除字符v
          # 使用支持版本号语义的sort -V提取最大的那个版本号
          bigger_ver=$(printf '%s\n%s\n' "$LATEST" "$VERSION" | sort -V | tail -n1)
@@ -246,7 +246,7 @@ EOF
             yesno yes "$yes"
             update
          elif [[ $bigger_ver == "$VERSION" ]]; then
-            echo "没有新版本可用"
+            echo "${SUC}没有新版本可用"
          else
             echo "${WARN}！警告：非法版本号，可能经过篡改，请检查正版性！"
          fi
